@@ -1,12 +1,11 @@
 /*\
  *  cache.js, keep and refresh in memory data
  *
- *  2013-10-07 / Meetin.gs
+ *  2013-10-08 / Meetin.gs
 \*/
 
 var _    = require('underscore')
 var http = require('request')
-var util = require('util')
 
 var HTTP_TIMEOUT = 12000
 
@@ -25,43 +24,77 @@ function reply(req, result, callback) {
 
     if (isKnownURL(key) && isInCache(key)) {
         callback(result, 200, Cache[key].data)
+        return
     }
-    else if (isKnownURL(key)) {
-        fillCacheWithGoodness(req, result, callback)
-    }
-    else {
-        Cache[key] = { fetched: false }
 
-        fillCacheWithGoodness(req, result, callback)
+    if (!isKnownURL(key)) {
+        Cache[key] = {
+            fetched:  false,
+            start:    req.start,
+            stop:     req.stop,
+            interval: req.interval
+        }
     }
+
+    fillCacheWithGoodness(key, result, callback)
 }
 
-function fillCacheWithGoodness(req, result, callback) {
+function fillCacheWithGoodness(url, result, callback) {
     var opts = {
-        uri:     req.url,
+        uri:     url,
         headers: { 'Cache-Control': 'no-cache' },
         timeout: HTTP_TIMEOUT
     }
 
     http(opts, function(err, response, data) {
         if (!err && response.statusCode === 200) {
-            Cache[req.url].data      = data
-            Cache[req.url].fetched   = true
-            Cache[req.url].timestamp = Date.now()
-            callback(result, 200, data)
+            Cache[url].data      = data
+            Cache[url].fetched   = true
+            Cache[url].timestamp = Date.now()
+
+            if (_.isFunction(callback)) {
+                callback(result, 200, data)
+            }
         }
         else {
-            Cache[req.url].fetched = false
-            callback(result, 404, '')
+            Cache[url].fetched = false
+
+            if (_.isFunction(callback)) {
+                callback(result, 404, '')
+            }
         }
     })
 }
 
-module.exports = {
-    reply: reply
+function makeCacheShine() {
+    var purge = []
+    var now = Date.now()
+
+    for (var key in Cache) {
+        if (Cache[key].start > now) {
+            continue
+        }
+
+        if (Cache[key].stop < now) {
+            purge.push(key)
+            continue
+        }
+
+        if (Cache[key].timestamp + Cache[key].interval < now) {
+            fillCacheWithGoodness(key, null, null)
+        }
+    }
+
+    purge.forEach(function(key) {
+        delete Cache[key]
+    })
 }
 
-function debug(msg, obj) {
-    console.log("DEBUG :: " + msg + " ::")
-    console.log(util.inspect(obj, {showHidden: true, depth: null, colors: true}))
+function refresh() {
+    setInterval(makeCacheShine, 1000)
+}
+
+module.exports = {
+    reply:   reply,
+    refresh: refresh
 }

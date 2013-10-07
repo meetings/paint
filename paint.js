@@ -3,7 +3,7 @@
 /*\
  *  paint.js
  *
- *  2013-10-07 / Meetin.gs
+ *  2013-10-08 / Meetin.gs
 \*/
 
 var _     = require('underscore')
@@ -11,9 +11,9 @@ var app   = require('express')()
 var util  = require('util')
 var cache = require('./cache')
 
-var LISTENING_PORT = 8000
-var DEFAULT_INTERVAL = 10000
-var DEFAULT_REFRESH_TIME = 60 * 60 * 1000
+var LISTENING_PORT           = 8000
+var DEFAULT_REFRESH_INTERVAL = 10 * 1000
+var DEFAULT_REFRESH_DURATION = 60 * 60 * 1000
 
 function parseRequest(req) {
     var parsed = {}
@@ -32,7 +32,7 @@ function parseRequest(req) {
     parsed.url = url
 
     if (_.isUndefined(stop)) {
-        parsed.stop = Date.now() + DEFAULT_REFRESH_TIME
+        parsed.stop = Date.now() + DEFAULT_REFRESH_DURATION
     }
     else {
         parsed.stop = Date.parse(stop)
@@ -46,10 +46,10 @@ function parseRequest(req) {
     }
 
     if (_.isUndefined(interval)) {
-        parsed.interval = DEFAULT_INTERVAL
+        parsed.interval = DEFAULT_REFRESH_INTERVAL
     }
     else {
-        parsed.interval = interval
+        parsed.interval = parseInt(interval, 10)
     }
 
     if (parsed.start >= parsed.stop) {
@@ -80,7 +80,4 @@ app.post('/', paint).listen(LISTENING_PORT)
 
 util.log('Listening port ' + LISTENING_PORT)
 
-function debug(msg, obj) {
-    console.log("DEBUG :: " + msg + " ::")
-    console.log(util.inspect(obj, {showHidden: true, depth: null, colors: true}))
-}
+cache.refresh()
