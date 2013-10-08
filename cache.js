@@ -13,6 +13,10 @@ var HTTP_TIMEOUT = 12000
 
 var Cache = {}
 
+function say() {
+    util.log(util.format.apply(null, arguments))
+}
+
 function isKnownURL(url) {
     return _.has(Cache, url)
 }
@@ -24,28 +28,45 @@ function isInCache(url) {
 function fillCacheWithGoodness(url, result, callback) {
     var opts = {
         uri:     url,
-        headers: { 'Cache-Control': 'no-cache' },
-        timeout: HTTP_TIMEOUT
+        timeout: HTTP_TIMEOUT,
+        headers: {
+            'Cache-Control': 'no-cache',
+            'If-None-Match': Cache[url].etag
+        }
     }
 
     http(opts, function(err, response, data) {
-        if (!err && response.statusCode === 200) {
+        var msg = 'OK'
+        var code = 200
+
+        if (err) {
+            code = 500
+            msg = 'Internal Proxy Error'
+            say('Error fetching %s', url)
+        }
+        else if (response.statusCode === 304) {
+            Cache[url].timestamp = Date.now()
+        }
+        else if (response.statusCode !== 200) {
+            msg = 'Unknown'
+            code = response.statusCode
+            say('Received a response code %s from %s', code, url)
+        }
+        else {
             zlib.gzip(data, function(err, buffer) {
+                msg = buffer
+
                 Cache[url].data      = buffer
+                Cache[url].etag      = response.headers.etag
                 Cache[url].fetched   = true
                 Cache[url].timestamp = Date.now()
 
-                if (_.isFunction(callback)) {
-                    callback(result, 200, buffer)
-                }
+                say('Cache update: %s', url)
             })
         }
-        else {
-            Cache[url].fetched = false
 
-            if (_.isFunction(callback)) {
-                callback(result, 404, '')
-            }
+        if (_.isFunction(callback)) {
+            callback(result, code, msg)
         }
     })
 }
@@ -70,7 +91,7 @@ function refreshLikeTheresNoTomorrow() {
     }
 
     purge.forEach(function(key) {
-        util.log('Deleting a cache entry: ' + key)
+        say('Deleting a cache entry: %s', key)
 
         delete Cache[key]
     })
@@ -85,10 +106,11 @@ function reply(req, result, callback) {
     }
 
     if (!isKnownURL(key)) {
-        util.log('Creating a cache entry for ' + key)
+        say('Creating a cache entry: %s', key)
 
         Cache[key] = {
             fetched:  false,
+            etag:     'null',
             start:    req.start,
             stop:     req.stop,
             interval: req.interval
