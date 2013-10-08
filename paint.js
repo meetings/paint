@@ -10,10 +10,12 @@ var _     = require('underscore')
 var app   = require('express')()
 var util  = require('util')
 var cache = require('./cache')
+var pkg   = require('./package.json')
 
 var LISTENING_PORT           = 8000
 var DEFAULT_REFRESH_INTERVAL = 10 * 1000
 var DEFAULT_REFRESH_DURATION = 60 * 60 * 1000
+var REPLY_ENCODING           = { 'Content-Encoding': 'gzip' }
 
 function parseRequest(req) {
     var parsed = {}
@@ -62,7 +64,7 @@ function parseRequest(req) {
 }
 
 function reply(result, code, data) {
-    result.status(code).send(data)
+    result.status(code).set(REPLY_ENCODING).send(data)
 }
 
 function paint(request, result) {
@@ -76,8 +78,10 @@ function paint(request, result) {
     }
 }
 
-app.post('/', paint).listen(LISTENING_PORT)
-
-util.log('Listening port ' + LISTENING_PORT)
+app.get('/', paint).listen(LISTENING_PORT)
 
 cache.refresh()
+
+util.log(pkg.name + ' ' + pkg.version)
+util.log(pkg.description + ' by Meetin.gs Ltd')
+util.log('Listening on port ' + LISTENING_PORT)

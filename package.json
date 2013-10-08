@@ -1,7 +1,7 @@
 {
   "name": "paint",
   "version": "0.0.1",
-  "description": "A small scale in-memory http cache.",
+  "description": "A small scale in-memory http cache",
   "dependencies": {
     "express": "~ 3.4",
     "request": "~ 2.27",

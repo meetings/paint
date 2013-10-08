@@ -6,6 +6,8 @@
 
 var _    = require('underscore')
 var http = require('request')
+var util = require('util')
+var zlib = require('zlib')
 
 var HTTP_TIMEOUT = 12000
 
@@ -19,26 +21,6 @@ function isInCache(url) {
     return Cache[url].fetched
 }
 
-function reply(req, result, callback) {
-    var key = req.url
-
-    if (isKnownURL(key) && isInCache(key)) {
-        callback(result, 200, Cache[key].data)
-        return
-    }
-
-    if (!isKnownURL(key)) {
-        Cache[key] = {
-            fetched:  false,
-            start:    req.start,
-            stop:     req.stop,
-            interval: req.interval
-        }
-    }
-
-    fillCacheWithGoodness(key, result, callback)
-}
-
 function fillCacheWithGoodness(url, result, callback) {
     var opts = {
         uri:     url,
@@ -48,13 +30,15 @@ function fillCacheWithGoodness(url, result, callback) {
 
     http(opts, function(err, response, data) {
         if (!err && response.statusCode === 200) {
-            Cache[url].data      = data
-            Cache[url].fetched   = true
-            Cache[url].timestamp = Date.now()
+            zlib.gzip(data, function(err, buffer) {
+                Cache[url].data      = buffer
+                Cache[url].fetched   = true
+                Cache[url].timestamp = Date.now()
 
-            if (_.isFunction(callback)) {
-                callback(result, 200, data)
-            }
+                if (_.isFunction(callback)) {
+                    callback(result, 200, buffer)
+                }
+            })
         }
         else {
             Cache[url].fetched = false
@@ -66,7 +50,7 @@ function fillCacheWithGoodness(url, result, callback) {
     })
 }
 
-function makeCacheShine() {
+function refreshLikeTheresNoTomorrow() {
     var purge = []
     var now = Date.now()
 
@@ -86,12 +70,36 @@ function makeCacheShine() {
     }
 
     purge.forEach(function(key) {
+        util.log('Deleting a cache entry: ' + key)
+
         delete Cache[key]
     })
 }
 
+function reply(req, result, callback) {
+    var key = req.url
+
+    if (isKnownURL(key) && isInCache(key)) {
+        callback(result, 200, Cache[key].data)
+        return
+    }
+
+    if (!isKnownURL(key)) {
+        util.log('Creating a cache entry for ' + key)
+
+        Cache[key] = {
+            fetched:  false,
+            start:    req.start,
+            stop:     req.stop,
+            interval: req.interval
+        }
+    }
+
+    fillCacheWithGoodness(key, result, callback)
+}
+
 function refresh() {
-    setInterval(makeCacheShine, 1000)
+    setInterval(refreshLikeTheresNoTomorrow, 1000)
 }
 
 module.exports = {
