@@ -15,14 +15,17 @@ var pkg   = require('./package.json')
 var LISTENING_PORT           = 8000
 var DEFAULT_REFRESH_INTERVAL = 30 * 1000
 var DEFAULT_REFRESH_DURATION = 60 * 60 * 1000
-var REPLY_ENCODING           = { 'Content-Encoding': 'gzip' }
+var GZIP_REPLY_ENCODING      = { 'Content-Encoding': 'gzip' }
+var REPLY_ENCODING           = {}
 
 function toInt(n) {
     return parseInt(n, 10)
 }
 
 function parseRequest(req) {
-    var parsed = {}
+    var parsed = {
+        gunzip : req.param('gunzip') ? 1 : 0
+    }
 
     var url      = req.param('url')
     var stop     = req.param('stop')
@@ -75,6 +78,15 @@ function parseRequest(req) {
     return parsed
 }
 
+function gzip_reply(result, code, data) {
+    if ( code == 200 ) {
+        result.status(code).set(GZIP_REPLY_ENCODING).send(data)
+    }
+    else {
+        result.status(code).set(REPLY_ENCODING).send(data)
+    }
+}
+
 function reply(result, code, data) {
     result.status(code).set(REPLY_ENCODING).send(data)
 }
@@ -85,8 +97,11 @@ function paint(request, result) {
     if (req.fail === true) {
         result.status(req.code).send(req.message)
     }
-    else {
+    else if ( req.gunzip ) {
         cache.reply(req, result, reply)
+    }
+    else {
+        cache.reply(req, result, gzip_reply)
     }
 }
 

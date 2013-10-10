@@ -39,9 +39,10 @@ function shortStr(str) {
     }
 }
 
-function compressAllTheThings(url, response, data, result, callback) {
+function compressAllTheThings(url, response, data, result, callback, gunzip ) {
     zlib.gzip(data, function(err, buffer) {
-        Cache[url].data      = buffer
+        Cache[url].data      = data
+        Cache[url].gzip_data = buffer
         Cache[url].etag      = response.headers.etag
         Cache[url].fetched   = true
         Cache[url].timestamp = Date.now()
@@ -49,12 +50,12 @@ function compressAllTheThings(url, response, data, result, callback) {
         say('Cache update: %s', shortStr(url))
 
         if (_.isFunction(callback)) {
-            callback(result, 200, buffer)
+            callback(result, 200, gunzip ? data : buffer )
         }
     })
 }
 
-function fillCacheWithGoodness(url, result, callback) {
+function fillCacheWithGoodness(url, result, callback, gunzip ) {
     var headers = {
         'User-Agent': USER_AGENT
     }
@@ -90,7 +91,7 @@ function fillCacheWithGoodness(url, result, callback) {
             say('Received a response code %s from %s', code, shortStr(url))
         }
         else {
-            compressAllTheThings(url, response, data, result, callback)
+            compressAllTheThings(url, response, data, result, callback, gunzip )
             callback = null
         }
 
@@ -130,7 +131,7 @@ function reply(req, result, callback) {
     var key = req.url
 
     if (isKnownURL(key) && isInCache(key)) {
-        callback(result, 200, Cache[key].data)
+        callback(result, 200, req.gunzip ? Cache[key].data : Cache[key].gzip_data)
         return
     }
 
@@ -146,7 +147,7 @@ function reply(req, result, callback) {
         }
     }
 
-    fillCacheWithGoodness(key, result, callback)
+    fillCacheWithGoodness(key, result, callback, req.gunzip )
 }
 
 function refresh() {
