@@ -13,7 +13,7 @@ var cache = require('./cache')
 var pkg   = require('./package.json')
 
 var LISTENING_PORT           = 8000
-var DEFAULT_REFRESH_INTERVAL = 10 * 1000
+var DEFAULT_REFRESH_INTERVAL = 30 * 1000
 var DEFAULT_REFRESH_DURATION = 60 * 60 * 1000
 var REPLY_ENCODING           = { 'Content-Encoding': 'gzip' }
 
