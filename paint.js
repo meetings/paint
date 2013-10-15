@@ -3,20 +3,20 @@
 /*\
  *  paint.js
  *
- *  2013-10-10 / Meetin.gs
+ *  2013-10-16 / Meetin.gs
 \*/
 
+var Q     = require('q')
 var _     = require('underscore')
 var app   = require('express')()
 var util  = require('util')
 var cache = require('./cache')
 var pkg   = require('./package.json')
 
-var LISTENING_PORT           = 8000
-var DEFAULT_REFRESH_INTERVAL = 30 * 1000
-var DEFAULT_REFRESH_DURATION = 60 * 60 * 1000
-var GZIP_REPLY_ENCODING      = { 'Content-Encoding': 'gzip' }
-var REPLY_ENCODING           = {}
+var Json = process.env.PAINT_CONF || '/etc/paint.json'
+var Conf = require(Json)
+
+var ENCODING_GZIP = {'Content-Encoding': 'gzip'}
 
 function toInt(n) {
     return parseInt(n, 10)
@@ -24,24 +24,37 @@ function toInt(n) {
 
 function parseRequest(req) {
     var parsed = {
-        gunzip : req.param('gunzip') ? 1 : 0
+        messages: {
+            '200': 'OK',
+            '400': 'Bad Request',
+            '401': 'Unauthorized',
+            '408': 'Request Timeout'
+        }
     }
 
     var url      = req.param('url')
+    var auth     = req.param('auth')
     var stop     = req.param('stop')
     var start    = req.param('start')
+    var gzip     = req.param('gunzip')
     var interval = req.param('interval')
 
     if (_.isUndefined(url)) {
-        parsed.fail = true
         parsed.code = 400
-        parsed.message = 'Bad Request\n'
+        return parsed
     }
 
-    parsed.url = url
+    parsed.url  = url
+    parsed.code = 200
+
+    if (!_.isEmpty(Conf.auth_token_list)) {
+        if (!_.contains(Conf.auth_token_list, auth)) {
+            parsed.code = 401
+        }
+    }
 
     if (_.isUndefined(stop)) {
-        parsed.stop = Date.now() + DEFAULT_REFRESH_DURATION
+        parsed.stop = Date.now() + toInt(Conf.def_refresh_duration)
     }
     else {
         parsed.stop = Date.UTC.apply(null, stop.split('-').map(toInt))
@@ -55,62 +68,69 @@ function parseRequest(req) {
     }
 
     if (_.isNaN(parsed.stop)) {
-        parsed.stop = Date.now() + DEFAULT_REFRESH_DURATION
+        parsed.stop = Date.now() + toInt(Conf.def_refresh_duration)
     }
 
     if (_.isNaN(parsed.start)) {
         parsed.start = Date.now()
     }
 
+    parsed.gzip = !_.isUndefined(gzip)
+
     if (_.isUndefined(interval)) {
-        parsed.interval = DEFAULT_REFRESH_INTERVAL
+        parsed.interval = toInt(Conf.def_refresh_interval)
     }
     else {
         parsed.interval = toInt(interval)
     }
 
     if (parsed.start >= parsed.stop) {
-        parsed.fail = true
         parsed.code = 408
-        parsed.message = 'Silly Request\n'
     }
 
     return parsed
 }
 
-function gzip_reply(result, code, data) {
-    if ( code == 200 ) {
-        result.status(code).set(GZIP_REPLY_ENCODING).send(data)
-    }
-    else {
-        result.status(code).set(REPLY_ENCODING).send(data)
-    }
-}
-
-function reply(result, code, data) {
-    result.status(code).set(REPLY_ENCODING).send(data)
-}
-
 function paint(request, result) {
     var req = parseRequest(request)
 
-    if (req.fail === true) {
-        result.status(req.code).send(req.message)
+    var reply = function(cache) {
+        /// debug("PULPAHTAA", cache)
+
+        if (!_.isUndefined(cache.err)) {
+            result.status(cache.err).send('Fail')
+        }
+        else if (req.gzip) {
+            debug("GZIP", cache.zipped)
+
+            result.set(ENCODING_GZIP).send(cache.zipped)
+        }
+        else {
+            debug("plain", null)
+
+            result.send(cache.data)
+        }
     }
-    else if ( req.gunzip ) {
-        cache.reply(req, result, reply)
+
+    if (req.code !== 200) {
+        result.status(req.code).send(req.messages[req.code])
     }
     else {
-        cache.reply(req, result, gzip_reply)
+        Q(req).then(cache.fetch).then(reply).done()
     }
 }
 
 app.get('/', paint)
 
-app.listen(LISTENING_PORT)
+app.listen(Conf.listening_port)
 
-cache.refresh()
+cache.init(pkg.name, pkg.version)
 
 util.log(pkg.name + ' ' + pkg.version)
 util.log(pkg.description + ' by Meetin.gs Ltd')
-util.log('Listening on port ' + LISTENING_PORT)
+util.log('Listening on port ' + Conf.listening_port)
+
+function debug(msg, obj) {
+    console.log("DEBUG :: " + msg + " ::")
+    console.log(util.inspect(obj, {showHidden: true, depth: 1, colors: true}))
+}

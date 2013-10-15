@@ -1,0 +1,26 @@
+{
+
+"README": [
+    "This configuration MUST be valid JSON data.",
+    "",
+    "All options in this example are mandatory",
+    "(i.e. must be present).",
+    "",
+    "If password is not needed, auth_token_list",
+    "may be left empty.",
+    "",
+    "Time values are in milliseconds."
+],
+
+"listening_port":        "8000",
+
+"def_refresh_interval":  "30000",
+"def_refresh_duration":  "3600000",
+
+"auth_token_list": [
+    "t0k3n1",
+    "t0k3n2",
+    "..."
+]
+
+}
