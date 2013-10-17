@@ -3,38 +3,44 @@
 /*\
  *  paint.js
  *
- *  2013-10-17 / Meetin.gs
+ *  2013-10-25 / Meetin.gs
 \*/
 
-var Q     = require('q')
-var _     = require('underscore')
-var app   = require('express')()
-var util  = require('util')
-var cache = require('./cache')
-var pkg   = require('./package.json')
+var Q           = require('q')
+var _           = require('underscore')
+var app         = require('express')()
+var http        = require('http')
+var httpRequest = require('request')
+var util        = require('util')
+var cache       = require('./cache')
+var pkg         = require('./package.json')
+
+var PING_TIMEOUT  = 1000
+var PING_INTERVAL = 2000
 
 var Json = process.env.PAINT_CONF || '/etc/paint.json'
 var Conf = require(Json)
+
+var PeerStatus    = 0
+var PrimaryPasswd = ''
+
+if (!_.isEmpty(Conf.auth_token_list)) {
+    PrimaryPasswd = Conf.auth_token_list[0]
+}
 
 function toInt(n) {
     return parseInt(n, 10)
 }
 
 function parseRequest(req) {
-    var parsed = {
-        messages: {
-            '200': 'OK',
-            '400': 'Bad Request',
-            '401': 'Unauthorized',
-            '408': 'Request Timeout'
-        }
-    }
+    var parsed = {}
 
     var url      = req.param('url')
     var auth     = req.param('auth')
     var stop     = req.param('stop')
     var start    = req.param('start')
     var gzip     = req.param('gunzip')
+    var peer     = req.param('peer')
     var interval = req.param('interval')
 
     if (_.isUndefined(url)) {
@@ -75,6 +81,8 @@ function parseRequest(req) {
 
     parsed.gzip = !_.isUndefined(gzip)
 
+    parsed.peer = !_.isUndefined(peer)
+
     if (_.isUndefined(interval)) {
         parsed.interval = toInt(Conf.def_refresh_interval)
     }
@@ -96,39 +104,93 @@ function paint(request, result) {
         result.status(500).send('Internal Server Error')
     }
 
-    var reply = function(cache) {
+    var reply = function(cached) {
         var headers = req.gzip? {'Content-Encoding': 'gzip'}: {}
 
        ;['ETag', 'Date', 'Last-Modified'].forEach(function(key) {
-            if (_.has(cache.headers, key.toLowerCase())) {
-                headers[key] = cache.headers[key.toLowerCase()]
+            if (_.has(cached.headers, key.toLowerCase())) {
+                headers[key] = cached.headers[key.toLowerCase()]
             }
         })
 
-        debug("lähetetään OTSAKKEET", headers)
+        util.log('Sending reply (with etag: ' + _.has(headers, 'ETag') + ')')
 
-        result.set(headers).send(req.gzip? cache.zipped: cache.data)
+        result.set(headers).send(req.gzip? cached.zipped: cached.data)
     }
 
     if (req.code !== 200) {
-        result.status(req.code).send(req.messages[req.code])
+        result.status(req.code).send(http.STATUS_CODES[req.code])
+        return
     }
-    else {
-        Q(req).then(cache.fetch).then(reply, err).done()
+
+    util.log("Request received: " + req.url + ' (peer: ' + req.peer + ')')
+
+    req.source = req.peer? req.url: util.format(
+        '%s/?peer&auth=%s&url=%s',
+        Conf.other_peer_url, PrimaryPasswd, encodeURIComponent(req.url)
+    )
+
+    function iterateUntilCached(retries) {
+        return Q.resolve(cache.ensure(req)).then(function(entry) {
+            return entry
+        },
+        function(err) {
+            util.log('Encountered an error, retrying if possible')
+
+            if (retries > 0) return iterateUntilCached(--retries)
+            else return err
+        })
     }
+
+    iterateUntilCached(2).then(function(entry) {
+        if (entry.cached) reply(entry)
+        else err()
+    })
+}
+
+function ping() {
+    var opts = {
+        uri:     Conf.other_peer_url + '/ping',
+        timeout: PING_TIMEOUT
+    }
+
+    httpRequest(opts, function(err, head, body) {
+        if (!err && body === 'PONG') {
+            PeerStatus = (PeerStatus > 0)? PeerStatus+1: 1
+        }
+        else {
+            PeerStatus = (PeerStatus < 0)? PeerStatus-1: -1
+        }
+    })
+}
+
+function pong(request, result) {
+    result.send('PONG')
+}
+
+function state(request, result) {
+    var buf = ''
+    buf += 'Instance: ' + Conf.instance_id
+    buf += '\n\nOther peer status: ' + PeerStatus
+    buf += '\n\nCache:\n' + cache.toString()
+    result.set({'Content-Type': 'text/plain'}).send(buf)
 }
 
 app.get('/', paint)
+app.get('/ping', pong)
+app.get('/status', state)
 
 app.listen(Conf.listening_port)
 
-cache.init(pkg.name, pkg.version)
+cache.init(pkg.name, pkg.version, function() {return PeerStatus})
+
+setInterval(ping, PING_INTERVAL)
 
 util.log(pkg.name + ' ' + pkg.version)
 util.log(pkg.description + ' by Meetin.gs Ltd')
 util.log('Listening on port ' + Conf.listening_port)
 
-function debug(msg, obj) {
+/* function debug(msg, obj) {
     console.log("DEBUG :: " + msg + " ::")
     console.log(util.inspect(obj, {showHidden: true, depth: 1, colors: true}))
-}
+} */
