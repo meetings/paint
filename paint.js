@@ -3,7 +3,7 @@
 /*\
  *  paint.js
  *
- *  2013-10-16 / Meetin.gs
+ *  2013-10-17 / Meetin.gs
 \*/
 
 var Q     = require('q')
@@ -15,8 +15,6 @@ var pkg   = require('./package.json')
 
 var Json = process.env.PAINT_CONF || '/etc/paint.json'
 var Conf = require(Json)
-
-var ENCODING_GZIP = {'Content-Encoding': 'gzip'}
 
 function toInt(n) {
     return parseInt(n, 10)
@@ -94,29 +92,29 @@ function parseRequest(req) {
 function paint(request, result) {
     var req = parseRequest(request)
 
+    var err = function() {
+        result.status(500).send('Internal Server Error')
+    }
+
     var reply = function(cache) {
-        /// debug("PULPAHTAA", cache)
+        var headers = req.gzip? {'Content-Encoding': 'gzip'}: {}
 
-        if (!_.isUndefined(cache.err)) {
-            result.status(cache.err).send('Fail')
-        }
-        else if (req.gzip) {
-            debug("GZIP", cache.zipped)
+       ;['ETag', 'Date', 'Last-Modified'].forEach(function(key) {
+            if (_.has(cache.headers, key.toLowerCase())) {
+                headers[key] = cache.headers[key.toLowerCase()]
+            }
+        })
 
-            result.set(ENCODING_GZIP).send(cache.zipped)
-        }
-        else {
-            debug("plain", null)
+        debug("lähetetään OTSAKKEET", headers)
 
-            result.send(cache.data)
-        }
+        result.set(headers).send(req.gzip? cache.zipped: cache.data)
     }
 
     if (req.code !== 200) {
         result.status(req.code).send(req.messages[req.code])
     }
     else {
-        Q(req).then(cache.fetch).then(reply).done()
+        Q(req).then(cache.fetch).then(reply, err).done()
     }
 }
 

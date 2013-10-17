@@ -1,7 +1,7 @@
 /*\
  *  cache.js, keep and refresh in memory data
  *
- *  2013-10-16 / Meetin.gs
+ *  2013-10-17 / Meetin.gs
 \*/
 
 var Q    = require('q')
@@ -23,7 +23,7 @@ var Cache = {
     insert: function(key, start, stop, interval) {
         this[key] = {
             cached:   false,
-            etag:     null,
+            headers:  {},
             start:    start,
             stop:     stop,
             interval: interval
@@ -33,7 +33,7 @@ var Cache = {
         if (typeof this[key] === 'undefined') return
 
         this[key].cached    = true
-        this[key].etag      = headers.etag
+        this[key].headers   = headers
         this[key].data      = data
         this[key].zipped    = zipped
         this[key].timestamp = Date.now()
@@ -51,6 +51,8 @@ function zipToCache(entry) {
     zlib.gzip(entry.data, function(err, zipped) {
         Cache.update(entry.url, entry.headers, entry.data, zipped)
         def.resolve(Cache[entry.url])
+
+        debug("MENI kakkuun", Cache)
     })
 
     return def.promise
@@ -60,8 +62,8 @@ function httpGet(url) {
     var def = Q.defer()
     var headers = {'User-Agent': USER_AGENT}
 
-    if (Cache[url].etag) {
-        headers['If-None-Match'] = Cache[url].etag
+    if (Cache[url].headers.etag) {
+        headers['If-None-Match'] = Cache[url].headers.etag
     }
     else {
         headers['Cache-Control'] = 'no-cache'
@@ -75,7 +77,7 @@ function httpGet(url) {
 
     http(opts, function(err, response, data) {
         if (err) {
-            def.reject({err: 500})
+            def.reject({url: url})
         }
         else if (response.statusCode === 304) {
             debug("etag \\o/", null)
@@ -84,7 +86,7 @@ function httpGet(url) {
             def.resolve(Cache[url])
         }
         else if (response.statusCode !== 200) {
-            def.reject({err: response.statusCode})
+            def.reject({url: url})
         }
         else {
             Q({url: url, headers: response.headers, data: data})
@@ -112,7 +114,6 @@ function refreshCache() {
         }
 
         if (Cache[key].timestamp + Cache[key].interval < now) {
-            /// debug("UPDATing because", {sum: Cache[key].timestamp + Cache[key].interval, nyt: now})
             httpGet(key)
         }
     }
@@ -122,7 +123,7 @@ function refreshCache() {
     })
 }
 
-function fetch(request) {
+function tryFulfillingCacheRequest(request) {
     var def = Q.defer()
     var url = request.url
 
@@ -132,16 +133,31 @@ function fetch(request) {
         Cache.insert(url, request.start, request.stop, request.interval)
     }
 
-    if (!Cache.isCached(url)) {
-        debug("EI oo datoja tallessa", null)
-
-        Q(url).then(httpGet).then(def.resolve).fail(def.resolve).done()
-    }
-    else {
+    if (Cache.isCached(url)) {
         debug("KAIKKI on sulle heti nyt", null)
 
-        def.resolve(Cache[url])
+        def.resolve(request)
     }
+    else {
+        debug("EI oo datoja tallessa", null)
+
+        Q(url)
+        .then(httpGet)
+        .then(def.resolve, def.reject)
+        .done()
+    }
+
+    return def.promise
+}
+
+function fetch(request) {
+    var def = Q.defer()
+
+    Q(request)
+    .then(tryFulfillingCacheRequest)
+    .fail(tryFulfillingCacheRequest)
+    .then(def.resolve, def.reject)
+    .done()
 
     return def.promise
 }
