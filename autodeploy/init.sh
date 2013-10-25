@@ -6,4 +6,4 @@ npm link
 
 install -m 0644 $DEPLOYDIR/$INTENT.conf /etc/init
 
-initctl emit --no-wait theservicestart
+service $INTENT start

@@ -9,8 +9,10 @@ git_upgrade && {
 
 npm update
 
+say Installing Upstart script
 install -m 0644 $DEPLOYDIR/$INTENT.conf /etc/init
 
-initctl emit --no-wait theservicestart
+say Restarting service
+service $INTENT restart
 
 say Githupdate done.
