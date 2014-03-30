@@ -3,7 +3,7 @@
 /*\
  *  paint.js
  *
- *  2013-10-25 / Meetin.gs
+ *  2014-03-30 / Meetin.gs
 \*/
 
 var Q           = require('q')
@@ -88,10 +88,6 @@ function parseRequest(req) {
     }
     else {
         parsed.interval = toInt(interval)
-    }
-
-    if (parsed.start >= parsed.stop) {
-        parsed.code = 408
     }
 
     return parsed
