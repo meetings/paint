@@ -1,18 +1,16 @@
 #!/bin/bash
 
-. $DEPLOYDIR/stage1.sh
+. $DEPLOYDIR/githupdate.sh
 
-git_upgrade && {
-    say Version has not changed, exiting
+git_upgrade && [ "$FORCE" != "yes" ] && {
+    echo Version has not changed, exiting
     exit 0
 }
 
 npm update
 
-say Installing Upstart script
 install -m 0644 $DEPLOYDIR/$INTENT.conf /etc/init
 
-say Restarting service
 service $INTENT restart
 
-say Githupdate done.
+echo Githupdate done
